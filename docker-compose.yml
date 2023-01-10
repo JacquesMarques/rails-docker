@@ -1,0 +1,78 @@
+version: "2"
+
+services:
+  app:
+    build:
+      context: .
+    image: rails-docker
+    command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails s -p 3000 -b '0.0.0.0'"
+    volumes:
+      - .:/app
+      - rails-docker_bundle:/usr/local/bundle
+    ports:
+      - 3000:3000
+    networks:
+      - rails-docker_network
+    stdin_open: true
+    tty: true
+    env_file:
+      - ${ENV_FILE:-.env}
+    depends_on:
+      - db
+
+  db:
+    image: postgres:13.2-alpine
+    container_name: rails-docker_db
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    networks:
+      - rails-docker_network
+
+  redis:
+    image: redis:6.0.12-alpine
+    container_name: rails-docker_redis
+    command: redis-server
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    logging:
+      driver: none
+    networks:
+      - rails-docker_network
+
+  sidekiq:
+    image: rails-docker
+    container_name: rails-docker_sidekiq
+    depends_on:
+      - app
+      - db
+      - redis
+    #mem_limit: 512m
+    volumes:
+      - .:/app
+      - rails-docker_bundle:/usr/local/bundle
+    command: dotenv -f ".env.sidekiq" bundle exec sidekiq -C config/sidekiq.yml
+    networks:
+      - rails-docker_network
+
+  mailcatcher:
+    restart: on-failure
+    image: dockage/mailcatcher:0.8.2
+    ports:
+      - "1080:1080"
+      - "1025:1025"
+
+volumes:
+  pg_data:
+  redis_data:
+  rails-docker_bundle:
+
+networks:
+  rails-docker_network:
+    name: rails-docker_network
